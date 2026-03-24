@@ -5,7 +5,6 @@ import Image from "next/image";
 import { PhoneInput } from "@/components/PhoneInput";
 import Button from "@/components/Button";
 
-// Import your placeholder image
 import UserProfile from "@/assets/images/user.png";
 
 const PRESET_AMOUNTS = [5, 10, 50, 100, 200, 500];
@@ -46,6 +45,29 @@ export type SendGiftDetailsFormProps = {
   onContinue?: () => void;
 };
 
+// Utility functions for Naira formatting
+const formatNaira = (value: number): string => {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const parseNairaInput = (input: string): number | null => {
+  // Remove all non-digit characters except decimal point
+  const cleaned = input.replace(/[^0-9.]/g, "");
+  // Handle multiple decimal points: keep only the first one
+  const parts = cleaned.split(".");
+  let numeric = parts[0];
+  if (parts.length > 1) {
+    numeric += "." + parts.slice(1).join("");
+  }
+  const parsed = parseFloat(numeric);
+  return isNaN(parsed) ? null : parsed;
+};
+
 export default function SendGiftDetailsForm({
   contacts,
   templates,
@@ -64,7 +86,8 @@ export default function SendGiftDetailsForm({
   } | null>(null);
 
   // Amount State
-  const [amount, setAmount] = useState<string>("");
+  const [rawAmount, setRawAmount] = useState<string>("");
+  const [formattedAmount, setFormattedAmount] = useState<string>("");
 
   // Delivery Date & Time State
   const [date, setDate] = useState("");
@@ -77,10 +100,56 @@ export default function SendGiftDetailsForm({
 
   const [isLoading, setIsLoading] = useState(false);
 
+  // Sync with external value prop (if controlled)
+  useEffect(() => {
+    if (value?.amount !== undefined && value.amount !== rawAmount) {
+      setRawAmount(value.amount);
+      const numeric = parseFloat(value.amount);
+      if (!isNaN(numeric)) {
+        setFormattedAmount(formatNaira(numeric));
+      } else {
+        setFormattedAmount("");
+      }
+    }
+  }, [value?.amount]);
+
+  // Helper to update parent with all form values
+  const notifyParent = () => {
+    if (onChange) {
+      onChange({
+        recipientId: "",
+        recipientName: recipient?.name || "",
+        recipientEmail: "",
+        recipientPhone: phoneNumber ? `${countryCode}${phoneNumber}` : "",
+        amount: rawAmount,
+        currency: "NGN",
+        message: message,
+        templateId: "",
+        hideAmountUntilUnlock: hideAmount,
+        anonymousUntilUnlock: false,
+        unlockDate: date,
+        unlockTime: time,
+      });
+    }
+  };
+
+  // Update formatted amount when rawAmount changes
+  useEffect(() => {
+    if (rawAmount) {
+      const num = parseFloat(rawAmount);
+      if (!isNaN(num)) {
+        setFormattedAmount(formatNaira(num));
+      } else {
+        setFormattedAmount("");
+      }
+    } else {
+      setFormattedAmount("");
+    }
+  }, [rawAmount]);
+
   // 1. Mock Recipient Lookup Logic
   useEffect(() => {
     const cleanedPhone = phoneNumber.replace(/\D/g, "");
-    // Simulate lookup completion after entering a valid length number
     if (cleanedPhone.length >= 10) {
       setRecipient({
         name: "Julaybeeb Abubakar",
@@ -109,11 +178,29 @@ export default function SendGiftDetailsForm({
 
   // 3. Validation for the Continue Button
   const isFormValid =
-    recipient !== null && amount !== "" && Number(amount) > 0 && !dateTimeError;
+    recipient !== null && rawAmount !== "" && parseFloat(rawAmount) > 0 && !dateTimeError;
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    const parsed = parseNairaInput(inputValue);
+    if (parsed !== null) {
+      const newRaw = parsed.toString();
+      setRawAmount(newRaw);
+      notifyParent();
+    } else {
+      setRawAmount("");
+      notifyParent();
+    }
+  };
+
+  const handlePresetClick = (amount: number) => {
+    const newRaw = amount.toString();
+    setRawAmount(newRaw);
+    notifyParent();
+  };
 
   const handleContinue = () => {
     setIsLoading(true);
-    // Simulate API/Routing delay
     setTimeout(() => {
       setIsLoading(false);
       onContinue?.();
@@ -142,7 +229,6 @@ export default function SendGiftDetailsForm({
               onChange={(e) => setPhoneNumber(e.target.value)}
             />
 
-            {/* Contact Card (Renders when recipient is found) */}
             {recipient && (
               <div className="mt-3 flex items-center gap-3 p-3 bg-white border border-[#E5E7EB] rounded-xl shadow-sm transition-all animate-in fade-in slide-in-from-top-2">
                 <Image
@@ -167,23 +253,17 @@ export default function SendGiftDetailsForm({
           {/* Amount Selection */}
           <div>
             <label className="block text-xs text-[#9CA3AF] mb-2 px-1">
-              Gift Amount (USD)
+              Gift Amount (NGN)
             </label>
 
-            {/* Custom Amount Input */}
-            <div className="relative flex items-center mb-3">
-              <span className="absolute left-4 text-[#18181B] font-medium text-lg">
-                $
-              </span>
-              <input
-                type="number"
-                min="1"
-                placeholder="Enter custom amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-8 pr-4 py-3 rounded-lg bg-white border border-[#E5E7EB] text-[#030213] placeholder:text-[#C6C7CF] focus:outline-none focus:ring-2 focus:ring-[#5A42DE]/20 focus:border-[#5A42DE] transition-all"
-              />
-            </div>
+            {/* Custom Amount Input with Naira formatting */}
+            <input
+              type="text"
+              placeholder="₦ 0.00"
+              value={formattedAmount}
+              onChange={handleAmountChange}
+              className="w-full px-4 py-3 rounded-lg bg-white border border-[#E5E7EB] text-[#030213] placeholder:text-[#C6C7CF] focus:outline-none focus:ring-2 focus:ring-[#5A42DE]/20 focus:border-[#5A42DE] transition-all mb-3"
+            />
 
             {/* Preset Amount Grid */}
             <div className="grid grid-cols-3 gap-2">
@@ -191,14 +271,14 @@ export default function SendGiftDetailsForm({
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setAmount(String(preset))}
+                  onClick={() => handlePresetClick(preset)}
                   className={`py-2 rounded-lg text-sm font-medium transition-colors border ${
-                    amount === String(preset)
+                    rawAmount === String(preset)
                       ? "bg-[#F1EDFF] border-[#5A42DE] text-[#5A42DE]"
                       : "bg-white border-[#E5E7EB] text-[#717182] hover:bg-gray-50"
                   }`}
                 >
-                  ${preset}
+                  ₦{preset}
                 </button>
               ))}
             </div>
