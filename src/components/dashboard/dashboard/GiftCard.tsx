@@ -81,8 +81,8 @@ export const GiftCard = () => {
           </div>
           <div>
             <div className="flex gap-5.75 flex-col lg:flex-row">
-              <GiftReleaseCard />
-              <GiftReleaseCard />
+              <GiftReleaseCard isLocked={true} />
+              <GiftReleaseCard isLocked={false} />
             </div>
           </div>
         </div>
@@ -95,9 +95,18 @@ export const GiftCard = () => {
     </div>
   );
 };
-const GiftReleaseCard = () => {
+const GiftReleaseCard = ({ isLocked = true }: { isLocked?: boolean }) => {
   return (
-    <div className="px-4 py-5 border border-[#F7F7F8] bg-white flex-1">
+    <div className="px-4 py-5 border border-[#F7F7F8] bg-white flex-1 relative overflow-hidden">
+      {/* Shimmer effect overlay for locked cards - targeting amount/timer areas */}
+      {isLocked && (
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Shimmer over the countdown timer area */}
+          <div className="absolute top-24 left-4 right-4 h-20 shimmer-animation rounded-lg" />
+          {/* Additional shimmer over potential amount/message area */}
+          <div className="absolute bottom-12 left-4 right-4 h-12 shimmer-animation rounded-lg" style={{ animationDelay: '0.7s' }} />
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex  items-center gap-2">
           <div className="bg-[#F7F7FC] size-11 rounded-full flex items-center justify-center">
