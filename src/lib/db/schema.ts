@@ -142,6 +142,8 @@ export const gifts = pgTable(
     senderAvatar: text("sender_avatar"),
     shareLink: text("share_link").unique(),
     shareLinkToken: text("share_link_token").unique(),
+    coverImageId: text("cover_image_id"),
+    linkExpiresAt: timestamp("link_expires_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

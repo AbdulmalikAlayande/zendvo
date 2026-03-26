@@ -26,6 +26,13 @@ export async function GET(
       );
     }
 
+    if (gift.linkExpiresAt && new Date(gift.linkExpiresAt) < new Date()) {
+      return NextResponse.json(
+        { success: false, error: "This gift link has expired" },
+        { status: 410 },
+      );
+    }
+
     if (gift.status !== "pending_review") {
       return NextResponse.json(
         { success: false, error: "Gift is not in pending_review status" },
