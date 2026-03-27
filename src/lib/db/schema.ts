@@ -49,6 +49,7 @@ export const users = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     lastLogin: timestamp("last_login"),
     lastOtpSentAt: timestamp("last_otp_sent_at"),
+    isPhoneVerified: boolean("is_phone_verified").default(false).notNull(),
   },
   (table) => {
     return [
