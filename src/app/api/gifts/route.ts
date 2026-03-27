@@ -11,6 +11,7 @@ import {
 } from "@/lib/validation";
 import { generateOTP, storeGiftOTP } from "@/server/services/otpService";
 import { sendGiftConfirmationOTP } from "@/server/services/emailService";
+import { calculateFee } from "@/lib/fees";
 
 export async function GET() {
   return NextResponse.json({ gifts: [] });
@@ -105,6 +106,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Calculate platform fee (2%)
+    const fee = calculateFee(amount);
+    const totalAmount = Math.round((amount + fee) * 100) / 100;
+
     // Create gift record
     const [newGift] = await db
       .insert(gifts)
@@ -112,6 +117,8 @@ export async function POST(request: NextRequest) {
         senderId: userId,
         recipientId: recipient,
         amount,
+        fee,
+        totalAmount,
         currency: currency.toUpperCase(),
         message: sanitizedMessage,
         template: sanitizedTemplate,
