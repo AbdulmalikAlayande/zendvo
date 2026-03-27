@@ -7,6 +7,7 @@ import {
   validateCurrency,
   sanitizeInput,
   validateMessage,
+  validateUnlockAt,
 } from "@/lib/validation";
 import { generateOTP, storeGiftOTP } from "@/server/services/otpService";
 import { sendGiftConfirmationOTP } from "@/server/services/emailService";
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { recipient, amount, currency = "USDC", message, template, coverImageId } = body;
+    const { recipient, amount, currency = "USDC", message, template, coverImageId, unlock_at } = body;
 
     // Validate required fields
     if (!recipient || !amount) {
@@ -93,6 +94,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate unlock_at if provided
+    if (unlock_at) {
+      const unlockValidation = validateUnlockAt(unlock_at);
+      if (!unlockValidation.valid) {
+        return NextResponse.json(
+          { success: false, error: unlockValidation.error },
+          { status: 400 },
+        );
+      }
+    }
+
     // Create gift record
     const [newGift] = await db
       .insert(gifts)
@@ -104,6 +116,7 @@ export async function POST(request: NextRequest) {
         message: sanitizedMessage,
         template: sanitizedTemplate,
         coverImageId: sanitizedCoverImageId,
+        unlockDatetime: unlock_at ? new Date(unlock_at) : null,
         status: "pending_otp",
       })
       .returning();

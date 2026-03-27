@@ -226,4 +226,106 @@ describe("POST /api/gifts", () => {
     expect(data.success).toBe(false);
     expect(data.error).toBe("Recipient, amount, and currency are required");
   });
+
+  it("should return 400 for unlock_at less than 1 hour in the future", async () => {
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+      id: "recipient-123",
+      email: "recipient@example.com",
+      name: "Recipient User",
+    });
+
+    const thirtyMinutesFromNow = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    const request = new NextRequest("http://localhost/api/gifts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "sender-123",
+        "x-user-email": "sender@example.com",
+      },
+      body: JSON.stringify({
+        recipient: "recipient-123",
+        amount: 100,
+        currency: "USD",
+        unlock_at: thirtyMinutesFromNow,
+      }),
+    });
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.success).toBe(false);
+    expect(data.error).toBe("unlock_at must be at least 1 hour in the future");
+  });
+
+  it("should return 400 for invalid unlock_at format", async () => {
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+      id: "recipient-123",
+      email: "recipient@example.com",
+      name: "Recipient User",
+    });
+
+    const request = new NextRequest("http://localhost/api/gifts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "sender-123",
+        "x-user-email": "sender@example.com",
+      },
+      body: JSON.stringify({
+        recipient: "recipient-123",
+        amount: 100,
+        currency: "USD",
+        unlock_at: "invalid-date",
+      }),
+    });
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.success).toBe(false);
+    expect(data.error).toBe("Invalid date format for unlock_at");
+  });
+
+  it("should create a gift successfully with valid unlock_at", async () => {
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+      id: "recipient-123",
+      email: "recipient@example.com",
+      name: "Recipient User",
+    });
+    (prisma.gift.create as jest.Mock).mockResolvedValue({
+      id: "gift-123",
+      senderId: "sender-123",
+      recipientId: "recipient-123",
+      amount: 100,
+      currency: "USD",
+      status: "pending_otp",
+    });
+
+    const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+    const request = new NextRequest("http://localhost/api/gifts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "sender-123",
+        "x-user-email": "sender@example.com",
+      },
+      body: JSON.stringify({
+        recipient: "recipient-123",
+        amount: 100,
+        currency: "USD",
+        unlock_at: twoHoursFromNow,
+      }),
+    });
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(data.success).toBe(true);
+    expect(data.giftId).toBe("gift-123");
+  });
 });

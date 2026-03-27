@@ -27,6 +27,22 @@ export const validateFutureDatetime = (date: Date): boolean => {
   return !isNaN(date.getTime()) && date.getTime() > Date.now();
 };
 
+export const validateUnlockAt = (unlockAt: string | Date): { valid: boolean; error?: string } => {
+  const unlockDate = new Date(unlockAt);
+  
+  if (isNaN(unlockDate.getTime())) {
+    return { valid: false, error: "Invalid date format for unlock_at" };
+  }
+  
+  const oneHourFromNow = Date.now() + 60 * 60 * 1000;
+  
+  if (unlockDate.getTime() < oneHourFromNow) {
+    return { valid: false, error: "unlock_at must be at least 1 hour in the future" };
+  }
+  
+  return { valid: true };
+};
+
 export const normalizePhoneNumber = (phone: string): string => {
   return phone.replace(/[\s\-().]/g, "");
 };

@@ -3,6 +3,7 @@ import {
   validatePhoneNumber,
   sanitizePhoneNumber,
   validateE164PhoneNumber,
+  validateUnlockAt,
 } from "@/lib/validation";
 
 describe("normalizePhoneNumber", () => {
@@ -173,5 +174,48 @@ describe("Integration Tests - Real-world scenarios", () => {
     invalidCases.forEach((input) => {
       expect(validateE164PhoneNumber(input)).toBe(false);
     });
+  });
+});
+
+describe("validateUnlockAt", () => {
+  it("should accept dates at least 1 hour in the future", () => {
+    const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const result = validateUnlockAt(twoHoursFromNow);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should accept ISO string dates at least 1 hour in the future", () => {
+    const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const result = validateUnlockAt(twoHoursFromNow);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should reject dates less than 1 hour in the future", () => {
+    const thirtyMinutesFromNow = new Date(Date.now() + 30 * 60 * 1000);
+    const result = validateUnlockAt(thirtyMinutesFromNow);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("unlock_at must be at least 1 hour in the future");
+  });
+
+  it("should reject dates in the past", () => {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const result = validateUnlockAt(oneHourAgo);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("unlock_at must be at least 1 hour in the future");
+  });
+
+  it("should reject invalid date formats", () => {
+    const result = validateUnlockAt("invalid-date");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid date format for unlock_at");
+  });
+
+  it("should accept exactly 1 hour in the future", () => {
+    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+    const result = validateUnlockAt(oneHourFromNow);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
   });
 });
