@@ -33,11 +33,11 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    email: text("email").notNull().unique(),
+    email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
     name: text("name"),
-    phoneNumber: text("phone_number").unique(),
-    username: text("username").unique(),
+    phoneNumber: text("phone_number"),
+    username: text("username"),
     avatarUrl: text("avatar_url"),
     role: text("role").default("user").notNull(),
     status: userStatusEnum("status").default("unverified").notNull(),
@@ -146,6 +146,7 @@ export const gifts = pgTable(
     paymentVerifiedAt: timestamp("payment_verified_at"),
     hideAmount: boolean("hide_amount").default(false).notNull(),
     hideSender: boolean("hide_sender").default(false).notNull(),
+    isAnonymous: boolean("is_anonymous").default(false).notNull(),
     unlockDatetime: timestamp("unlock_datetime"),
     senderName: text("sender_name"),
     senderEmail: text("sender_email"),
@@ -169,6 +170,8 @@ export const gifts = pgTable(
         table.recipientId,
       ),
       index("gift_share_link_token_idx").on(table.shareLinkToken),
+      index("gift_slug_idx").on(table.slug),
+      index("gift_blockchain_tx_hash_idx").on(table.blockchainTxHash),
     ];
   },
 );

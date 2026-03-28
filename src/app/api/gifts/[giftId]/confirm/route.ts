@@ -50,24 +50,24 @@ export async function POST(
       );
     }
 
-    // Idempotency: already completed
-    if (gift.status === "completed") {
+    // Idempotency: already completed/sent
+    if (gift.status === "completed" || gift.status === "sent") {
       return NextResponse.json(
         {
           success: false,
-          error: "Gift has already been claimed",
+          error: "Gift has already been completed",
           transactionId: gift.transactionId,
         },
         { status: 409 },
       );
     }
 
-    // Must be confirmed to proceed
+    // Must be confirmed to proceed with settlement
     if (gift.status !== "confirmed") {
       return NextResponse.json(
         {
           success: false,
-          error: `Gift must be confirmed before confirmation. Current status: ${gift.status}`,
+          error: `Gift must be confirmed before completion. Current status: ${gift.status}`,
         },
         { status: 400 },
       );
