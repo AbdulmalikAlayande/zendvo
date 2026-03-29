@@ -4,6 +4,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -33,11 +34,11 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    email: text("email").notNull().unique(),
+    email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
     name: text("name"),
-    phoneNumber: text("phone_number").unique(),
-    username: text("username").unique(),
+    phoneNumber: text("phone_number"),
+    username: text("username"),
     avatarUrl: text("avatar_url"),
     role: text("role").default("user").notNull(),
     status: userStatusEnum("status").default("unverified").notNull(),
@@ -117,6 +118,7 @@ export const refreshTokens = pgTable(
     revokedAt: timestamp("revoked_at"),
     deviceInfo: text("device_info"),
     deviceId: text("device_id"),
+    fingerprint: text("fingerprint"),
   },
   (table) => {
     return [index("rt_user_id_idx").on(table.userId)];
@@ -140,11 +142,13 @@ export const gifts = pgTable(
     otpExpiresAt: timestamp("otp_expires_at"),
     otpAttempts: integer("otp_attempts").default(0).notNull(),
     transactionId: text("transaction_id").unique(),
+    blockchainTxHash: text("blockchain_tx_hash"),
     paymentReference: text("payment_reference"),
     paymentProvider: text("payment_provider"),
     paymentVerifiedAt: timestamp("payment_verified_at"),
     hideAmount: boolean("hide_amount").default(false).notNull(),
     hideSender: boolean("hide_sender").default(false).notNull(),
+    isAnonymous: boolean("is_anonymous").default(false).notNull(),
     unlockDatetime: timestamp("unlock_datetime"),
     senderName: text("sender_name"),
     senderEmail: text("sender_email"),
@@ -278,3 +282,19 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+export const webhookRetryQueue = pgTable("WebhookRetryQueue", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  retryCount: integer("retry_count").default(0).notNull(),
+  maxRetries: integer("max_retries").default(5).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

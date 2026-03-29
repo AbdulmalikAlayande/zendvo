@@ -1,4 +1,5 @@
 {
+  "id": "c1741252-56d2-4825-8029-24386ef6a311",
   "id": "7713c465-d6e7-412d-97a3-3868c3e42b6a",
   "prevId": "56a44295-676d-4e3e-b641-44e3341addf1",
   "version": "7",
@@ -161,6 +162,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
+          "default": "'pending_otp'"
           "default": "'PENDING'"
         },
         "otp_hash": {
@@ -202,6 +204,13 @@
           "notNull": true,
           "default": false
         },
+        "is_anonymous": {
+          "name": "is_anonymous",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "unlock_datetime": {
           "name": "unlock_datetime",
           "type": "timestamp",
@@ -234,6 +243,12 @@
         },
         "share_link_token": {
           "name": "share_link_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slug": {
+          "name": "slug",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -352,6 +367,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "gift_slug_idx": {
+          "name": "gift_slug_idx",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -403,6 +433,13 @@
           "nullsNotDistinct": false,
           "columns": [
             "share_link_token"
+          ]
+        },
+        "gifts_slug_unique": {
+          "name": "gifts_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
           ]
         }
       },
@@ -676,6 +713,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -837,6 +880,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "is_phone_verified": {
+          "name": "is_phone_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -874,6 +924,18 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "users_phone_number_unique": {
+          "name": "users_phone_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "phone_number"
+          ]
+        },
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "email"
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
@@ -998,6 +1060,13 @@
       "name": "gift_status",
       "schema": "public",
       "values": [
+        "pending_otp",
+        "otp_verified",
+        "pending_review",
+        "confirmed",
+        "completed",
+        "sent",
+        "failed"
         "PENDING",
         "FUNDED",
         "LOCKED",

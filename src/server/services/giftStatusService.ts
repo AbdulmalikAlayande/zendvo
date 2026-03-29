@@ -3,11 +3,13 @@ import { gifts } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 
 export const GIFT_STATUS_TRANSITIONS = {
-  PENDING: ["FUNDED", "LOCKED"],
-  FUNDED: ["LOCKED", "UNLOCKED"], 
-  LOCKED: ["UNLOCKED"],
-  UNLOCKED: ["CLAIMED"],
-  CLAIMED: [], // Terminal state
+  pending_otp: ["otp_verified", "failed"],
+  otp_verified: ["pending_review", "confirmed", "failed"],
+  pending_review: ["confirmed", "failed"],
+  confirmed: ["completed", "sent", "failed"],
+  completed: ["sent"],
+  sent: [],
+  failed: [],
 } as const;
 
 export type GiftStatus = keyof typeof GIFT_STATUS_TRANSITIONS;
@@ -16,13 +18,13 @@ export interface StatusTransitionResult {
   success: boolean;
   message: string;
   currentStatus?: string;
-  allowedTransitions?: string[];
+  allowedTransitions?: readonly string[];
 }
 
 export async function validateGiftStatusTransition(
   giftId: string,
   targetStatus: GiftStatus,
-  currentUserId?: string
+  currentUserId?: string,
 ): Promise<StatusTransitionResult> {
   const gift = await db.query.gifts.findFirst({
     where: eq(gifts.id, giftId),
@@ -36,10 +38,11 @@ export async function validateGiftStatusTransition(
   }
 
   const currentStatus = gift.status as GiftStatus;
-  
+
   // Check if transition is allowed
-  const allowedTransitions = GIFT_STATUS_TRANSITIONS[currentStatus] || [];
-  
+  const allowedTransitions: readonly GiftStatus[] =
+    GIFT_STATUS_TRANSITIONS[currentStatus] || [];
+
   if (!allowedTransitions.includes(targetStatus)) {
     return {
       success: false,
@@ -50,7 +53,11 @@ export async function validateGiftStatusTransition(
   }
 
   // Additional business logic validations
-  const validationResult = await validateBusinessRules(gift, targetStatus, currentUserId);
+  const validationResult = await validateBusinessRules(
+    gift,
+    targetStatus,
+    currentUserId,
+  );
   if (!validationResult.success) {
     return validationResult;
   }
@@ -66,14 +73,18 @@ export async function validateGiftStatusTransition(
 async function validateBusinessRules(
   gift: any,
   targetStatus: GiftStatus,
-  currentUserId?: string
+  currentUserId?: string,
 ): Promise<StatusTransitionResult> {
   const now = new Date();
 
   switch (targetStatus) {
-    case "FUNDED":
+    case "otp_verified":
       // Can only fund if OTP is verified (for sender-initiated gifts)
-      if (gift.otpHash && gift.otpExpiresAt && now > new Date(gift.otpExpiresAt)) {
+      if (
+        gift.otpHash &&
+        gift.otpExpiresAt &&
+        now > new Date(gift.otpExpiresAt)
+      ) {
         return {
           success: false,
           message: "OTP has expired. Please request a new verification code.",
@@ -81,7 +92,7 @@ async function validateBusinessRules(
       }
       break;
 
-    case "LOCKED":
+    case "confirmed":
       // Can only lock if there's a future unlock datetime
       if (!gift.unlockDatetime) {
         return {
@@ -89,7 +100,7 @@ async function validateBusinessRules(
           message: "Cannot lock gift: no unlock datetime specified",
         };
       }
-      
+
       if (new Date(gift.unlockDatetime) <= now) {
         return {
           success: false,
@@ -98,25 +109,26 @@ async function validateBusinessRules(
       }
       break;
 
-    case "UNLOCKED":
+    case "completed":
       // Can only unlock if unlock datetime has passed
       if (gift.unlockDatetime && new Date(gift.unlockDatetime) > now) {
         return {
           success: false,
-          message: "Gift cannot be unlocked yet. Please wait until the unlock datetime.",
+          message:
+            "Gift cannot be unlocked yet. Please wait until the unlock datetime.",
         };
       }
       break;
 
-    case "CLAIMED":
+    case "sent":
       // Can only claim if sender has sufficient funds (for funded gifts)
       if (gift.senderId) {
         // This check should be done in the actual claiming logic with proper wallet balance checks
         // Here we just ensure the gift is in a claimable state
-        if (gift.status !== "UNLOCKED" && gift.status !== "FUNDED") {
+        if (gift.status !== "completed" && gift.status !== "confirmed") {
           return {
             success: false,
-            message: `Gift must be UNLOCKED or FUNDED to be claimed. Current status: ${gift.status}`,
+            message: `Gift must be completed or confirmed to be sent. Current status: ${gift.status}`,
           };
         }
       }
@@ -132,34 +144,36 @@ async function validateBusinessRules(
 export async function transitionGiftStatus(
   giftId: string,
   targetStatus: GiftStatus,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
 ): Promise<StatusTransitionResult> {
   const validation = await validateGiftStatusTransition(giftId, targetStatus);
-  
+
   if (!validation.success) {
     return validation;
   }
 
   try {
     const updateData: any = { status: targetStatus };
-    
+
     // Add metadata for specific transitions
-    if (targetStatus === "CLAIMED" && metadata?.transactionId) {
+    if (
+      (targetStatus === "completed" || targetStatus === "sent") &&
+      metadata?.transactionId
+    ) {
       updateData.transactionId = metadata.transactionId;
-      updateData.completedAt = new Date();
     }
 
-    await db
-      .update(gifts)
-      .set(updateData)
-      .where(eq(gifts.id, giftId));
+    await db.update(gifts).set(updateData).where(eq(gifts.id, giftId));
 
     return {
       success: true,
       message: `Gift status successfully updated to ${targetStatus}`,
     };
   } catch (error) {
-    console.error(`Error transitioning gift ${giftId} to ${targetStatus}:`, error);
+    console.error(
+      `Error transitioning gift ${giftId} to ${targetStatus}:`,
+      error,
+    );
     return {
       success: false,
       message: "Database error while updating gift status",
@@ -167,14 +181,84 @@ export async function transitionGiftStatus(
   }
 }
 
+export async function markGiftPaymentSuccessfulByReference(
+  reference: string,
+  provider: "paystack" | "stripe",
+): Promise<StatusTransitionResult> {
+  try {
+    const gift = await db.query.gifts.findFirst({
+      where: and(
+        eq(gifts.paymentReference, reference),
+        eq(gifts.paymentProvider, provider),
+      ),
+    });
+
+    if (!gift) {
+      return {
+        success: false,
+        message: "Gift not found for payment reference",
+      };
+    }
+
+    const alreadyProcessedStatuses = [
+      "pending_review",
+      "confirmed",
+      "completed",
+      "sent",
+    ];
+
+    if (alreadyProcessedStatuses.includes(gift.status as string)) {
+      return {
+        success: true,
+        message: `Gift already processed with status ${gift.status}`,
+        currentStatus: gift.status,
+      };
+    }
+
+    await db
+      .update(gifts)
+      .set({
+        status: "pending_review",
+        paymentVerifiedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(gifts.id, gift.id));
+
+    return {
+      success: true,
+      message: "Gift payment marked successful",
+      currentStatus: "pending_review",
+    };
+  } catch (error) {
+    console.error("Error marking gift payment successful by reference:", error);
+    return {
+      success: false,
+      message: "Database error while marking payment successful",
+    };
+  }
+}
+
 export function getGiftStatusFlow(): GiftStatus[] {
-  return ["PENDING", "FUNDED", "LOCKED", "UNLOCKED", "CLAIMED"];
+  return [
+    "pending_otp",
+    "otp_verified",
+    "pending_review",
+    "confirmed",
+    "completed",
+    "sent",
+    "failed",
+  ];
 }
 
 export function isTerminalStatus(status: GiftStatus): boolean {
-  return status === "CLAIMED";
+  return status === "sent" || status === "failed";
 }
 
-export function canTransitionFrom(currentStatus: GiftStatus, targetStatus: GiftStatus): boolean {
-  return GIFT_STATUS_TRANSITIONS[currentStatus]?.includes(targetStatus) || false;
+export function canTransitionFrom(
+  currentStatus: GiftStatus,
+  targetStatus: GiftStatus,
+): boolean {
+  const transitions: readonly GiftStatus[] =
+    GIFT_STATUS_TRANSITIONS[currentStatus] || [];
+  return transitions.includes(targetStatus);
 }

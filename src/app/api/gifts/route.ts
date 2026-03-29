@@ -8,7 +8,8 @@ import {
   sanitizeInput,
   validateMessage,
   validateUnlockAt,
-  CreateGiftSchema,
+  convertToUTCDate,
+  formatAsUTCISO,
 } from "@/lib/validation";
 import { generateOTP, storeGiftOTP } from "@/server/services/otpService";
 import { sendGiftConfirmationOTP } from "@/server/services/emailService";
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
         message: sanitizedMessage,
         template: sanitizedTemplate,
         coverImageId: sanitizedCoverImageId,
-        unlockDatetime: unlock_at ? new Date(unlock_at) : null,
+        unlockDatetime: utcUnlockDatetime,
         status: "pending_otp",
         slug,
         shortCode,
