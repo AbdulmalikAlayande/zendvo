@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { secondaryDisabledBg, secondaryDisabledText } from "./buttonColors";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "outline";
@@ -18,12 +19,13 @@ const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseStyles =
-    "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+    "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-not-allowed";
 
   const variants = {
     primary:
       "bg-[#5A45FE] text-white hover:bg-[#4b35e5] disabled:bg-[#5A45FE]/70",
-    secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
+    // Add explicit disabled colors for secondary to ensure sufficient contrast
+    secondary: `bg-gray-100 text-gray-900 hover:bg-gray-200 disabled:bg-[${secondaryDisabledBg}] disabled:text-[${secondaryDisabledText}]`,
     outline:
       "border border-gray-300 bg-transparent hover:bg-gray-50 text-gray-700",
   };
