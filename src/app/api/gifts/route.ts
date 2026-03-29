@@ -13,8 +13,7 @@ import {
 } from "@/lib/validation";
 import { generateOTP, storeGiftOTP } from "@/server/services/otpService";
 import { sendGiftConfirmationOTP } from "@/server/services/emailService";
-import { generateUniqueSlug } from "@/lib/slug";
-import { generateUniqueShortCode } from "@/lib/shortCode";
+import { calculateFee } from "@/lib/fees";
 
 export async function GET() {
   return NextResponse.json({ gifts: [] });
@@ -107,6 +106,8 @@ export async function POST(request: NextRequest) {
         senderId: userId,
         recipientId: recipient,
         amount,
+        fee,
+        totalAmount,
         currency: currency.toUpperCase(),
         message: sanitizedMessage,
         template: sanitizedTemplate,
