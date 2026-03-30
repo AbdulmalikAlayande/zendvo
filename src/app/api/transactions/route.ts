@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { paginatedResponse } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { gifts } from "@/lib/db/schema";
 import { eq, or, desc, count } from "drizzle-orm";
@@ -103,10 +104,5 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json({
-    data: transactions,
-    total,
-    page,
-    limit,
-  });
+  return paginatedResponse(transactions, total, page, limit);
 }

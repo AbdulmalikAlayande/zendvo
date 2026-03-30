@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { paginatedResponse } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { users, gifts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,7 +15,7 @@ import { sendGiftConfirmationOTP } from "@/server/services/emailService";
 import { calculateFee } from "@/lib/fees";
 
 export async function GET() {
-  return NextResponse.json({ gifts: [] });
+  return paginatedResponse([], 0, 1, 10);
 }
 
 export async function POST(request: NextRequest) {
