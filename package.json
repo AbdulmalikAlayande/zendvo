@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "jest"
+    "test": "jest",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:check": "node -e \"require('./src/lib/db/migration-checker').checkMigrationStatus().then(s => console.log(s.message))\""
   },
   "dependencies": {
     "@libsql/client": "^0.17.0",
