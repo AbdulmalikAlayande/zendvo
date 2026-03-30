@@ -8,9 +8,13 @@ import {
   validateEmail,
   validateFutureDatetime,
   sanitizeInput,
+  convertToUTCDate,
 } from "@/lib/validation";
+import { supportedCurrencyCodes } from "@/lib/db/schema";
 import { isRateLimited } from "@/lib/rate-limiter";
 import { validateHoneypot } from "@/lib/honeypot";
+import { generateUniqueSlug } from "@/lib/slug";
+import { generateUniqueShortCode } from "@/lib/shortCode";
 
 const MAX_MESSAGE_LENGTH = 500;
 
@@ -43,7 +47,7 @@ export async function POST(request: NextRequest) {
     const {
       recipientId,
       amount,
-      currency,
+      currency = "NGN",
       unlockDatetime,
       hideAmount,
       message,
@@ -52,12 +56,12 @@ export async function POST(request: NextRequest) {
       senderAvatar,
     } = body;
 
-    if (!recipientId || !amount || !currency || !senderName || !senderEmail) {
+    if (!recipientId || !amount || !senderName || !senderEmail) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "recipientId, amount, currency, senderName, and senderEmail are required",
+            "recipientId, amount, senderName, and senderEmail are required",
         },
         { status: 400 },
       );
@@ -77,9 +81,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Unsupported currency. Accepted: USD, EUR, GBP, NGN",
+          error: `Unsupported currency. Accepted: ${supportedCurrencyCodes.join(", ")}`,
         },
-        { status: 422 },
+        { status: 400 },
       );
     }
 
@@ -91,12 +95,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (unlockDatetime !== undefined && unlockDatetime !== null) {
-      const parsedDate = new Date(unlockDatetime);
-      if (!validateFutureDatetime(parsedDate)) {
+      try {
+        const utcDate = convertToUTCDate(unlockDatetime);
+        if (!utcDate || !validateFutureDatetime(utcDate)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: "Delivery datetime must be a valid ISO 8601 date string with timezone in the future",
+            },
+            { status: 422 },
+          );
+        }
+      } catch (error) {
         return NextResponse.json(
           {
             success: false,
-            error: "Delivery datetime must be a valid date in the future",
+            error: error instanceof Error ? error.message : "Invalid delivery datetime format",
           },
           { status: 422 },
         );
@@ -157,6 +171,11 @@ export async function POST(request: NextRequest) {
       ? sanitizeInput(senderAvatar)
       : null;
 
+    const slug = await generateUniqueSlug();
+
+    // Generate short code for public share links
+    const shortCode = await generateUniqueShortCode();
+
     const [newGift] = await db
       .insert(gifts)
       .values({
@@ -166,15 +185,17 @@ export async function POST(request: NextRequest) {
         message: sanitizedMessage,
         status: "pending_review",
         hideAmount: hideAmount ?? false,
-        unlockDatetime: unlockDatetime ? new Date(unlockDatetime) : null,
+        unlockDatetime: utcUnlockDatetime,
         senderName: sanitizedSenderName,
         senderEmail: sanitizedSenderEmail,
         senderAvatar: sanitizedSenderAvatar,
+        slug,
+        shortCode,
       })
       .returning();
 
     return NextResponse.json(
-      { success: true, data: { giftId: newGift.id, status: "pending_review" } },
+      { success: true, data: { giftId: newGift.id, status: "pending_review", slug: newGift.slug, shortCode: newGift.shortCode } },
       { status: 201 },
     );
   } catch (error) {

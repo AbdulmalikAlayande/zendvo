@@ -15,12 +15,12 @@ export const AccountBalanceCard = () => {
           <div>
             <div className="flex items-center justify-between w-full mb-2">
               <div>
-                <p className="leading-6 text-base text-[#18181B]  flex items-center">
+                <span className="leading-6 text-base text-[#18181B] flex items-center">
                   <div className="mr-2 inline-flex items-center justify-center size-6 bg-[#F7F7FC] rounded-full ">
                     <MoneyBag />
                   </div>
                   Account Balance
-                </p>
+                </span>
               </div>
               <div className="py-1 px-3 rounded-3xl border border-[#F5F6F7] bg-[#F5F6F7] uppercase text-sm font-medium text-[#17171C] gap-x-2 items-center justify-center flex ">
                 <CoinIcon />

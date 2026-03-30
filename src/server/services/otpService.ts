@@ -3,6 +3,25 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { users, emailVerifications, gifts } from "@/lib/db/schema";
 import { eq, and, desc, lt, or, gt, sql } from "drizzle-orm";
+import { validateE164PhoneNumber, sanitizePhoneNumber } from "@/lib/validation";
+import {
+  AuditEventType,
+  logGiftOTPEvent,
+  logOTPEvent,
+} from "@/server/services/auditService";
+import { sendAdminAlert } from "./emailService";
+
+const SUSPICIOUS_OTP_THRESHOLD = 20;
+const IP_TRACKING_WINDOW_MS = 60 * 60 * 1000; // 1 hour rolling window
+
+type IpFailureState = {
+  count: number;
+  userIds: Set<string>;
+  phoneNumbers: Set<string>;
+  lastAttempt: number;
+};
+
+const otpFailuresByIp = new Map<string, IpFailureState>();
 
 export const MAX_OTP_REQUESTS_PER_PHONE = 4;
 export const OTP_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -151,13 +170,99 @@ export function verifyOTPHash(
 ): boolean {
   const hash = crypto.createHmac("sha256", salt).update(otp).digest("hex");
 
+  if (hash.length !== storedHash.length) {
+    return false;
+  }
+
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(storedHash));
+}
+
+export async function sendOTP(phoneNumber: string): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    // Validate and sanitize phone number
+    if (!validateE164PhoneNumber(phoneNumber)) {
+      return {
+        success: false,
+        message: "Invalid phone number format. Please use E.164 format (e.g., +2348123456789)",
+        error: "INVALID_PHONE_FORMAT"
+      };
+    }
+
+    const sanitizedPhone = sanitizePhoneNumber(phoneNumber);
+
+    // Find user by phone number
+    const user = await db.query.users.findFirst({
+      where: eq(users.phoneNumber, sanitizedPhone),
+    });
+
+    if (!user) {
+      return {
+        success: false,
+        message: "User not found with this phone number",
+        error: "USER_NOT_FOUND"
+      };
+    }
+
+    if (user.status === "suspended") {
+      return {
+        success: false,
+        message: "Account suspended",
+        error: "ACCOUNT_SUSPENDED"
+      };
+    }
+
+    // Generate and store OTP
+    const otp = generateOTP();
+    await storeOTP(user.id, otp);
+
+    // TODO: Integrate with SMS provider (e.g., Twilio, AWS SNS)
+    // For now, we'll log the OTP (in production, this should send via SMS)
+    console.log(`[SMS_OTP] Phone: ${sanitizedPhone}, OTP: ${otp}`);
+
+    // Mock SMS sending - replace with actual SMS provider integration
+    const smsResult = await sendSMSViaProvider(sanitizedPhone, `Your Zendvo verification code is: ${otp}. Valid for 10 minutes.`);
+
+    if (!smsResult.success) {
+      console.error("Failed to send OTP SMS:", smsResult.error);
+      return {
+        success: false,
+        message: "Failed to send OTP SMS",
+        error: "SMS_SEND_FAILED"
+      };
+    }
+
+    console.log(`[AUDIT] SMS OTP sent to ${sanitizedPhone} for user ${user.id}`);
+
+    return {
+      success: true,
+      message: "OTP sent successfully via SMS"
+    };
+
+  } catch (error) {
+    console.error("[SEND_PHONE_OTP_ERROR]", error);
+    return {
+      success: false,
+      message: "Internal server error",
+      error: "INTERNAL_ERROR"
+    };
+  }
+}
+
+
+async function sendSMSViaProvider(phoneNumber: string, message: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // For now, simulate successful SMS sending
+    console.log(`[MOCK_SMS] To: ${phoneNumber}, Message: ${message}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Unknown SMS error" };
+  }
 }
 
 export async function storeOTP(userId: string, otp: string) {
   const { salt, hash } = hashOTP(otp);
   const storedValue = `${salt}:${hash}`;
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   // Invalidate previous unused OTPs
   await db
@@ -191,7 +296,7 @@ export async function storeOTP(userId: string, otp: string) {
   return newVerification;
 }
 
-export async function verifyOTP(userId: string, otp: string) {
+export async function verifyOTP(userId: string, otp: string, ipAddress?: string) {
   const verification = await db.query.emailVerifications.findFirst({
     where: and(
       eq(emailVerifications.userId, userId),
@@ -274,6 +379,43 @@ export async function verifyOTP(userId: string, otp: string) {
       })
       .where(eq(users.id, userId));
 
+    // IP-based suspicious activity tracking
+    if (ipAddress) {
+      const now = Date.now();
+      let state = otpFailuresByIp.get(ipAddress);
+
+      // Reset tracking state if window has expired since last attempt
+      if (state && now - state.lastAttempt > IP_TRACKING_WINDOW_MS) {
+        otpFailuresByIp.delete(ipAddress);
+        state = undefined;
+      }
+
+      if (!state) {
+        state = {
+          count: 0,
+          userIds: new Set<string>(),
+          phoneNumbers: new Set<string>(),
+          lastAttempt: now,
+        };
+      }
+
+      state.count++;
+      state.lastAttempt = now;
+      state.userIds.add(userId);
+      if (user?.phoneNumber) state.phoneNumbers.add(user.phoneNumber);
+
+      otpFailuresByIp.set(ipAddress, state);
+
+      if (state.count === SUSPICIOUS_OTP_THRESHOLD) {
+        sendAdminAlert({
+          userIds: Array.from(state.userIds),
+          ips: [ipAddress],
+          phoneNumbers: Array.from(state.phoneNumbers),
+          failureCount: state.count,
+        }).catch((err) => console.error("[ADMIN_ALERT_ERROR]", err));
+      }
+    }
+
     logOTPEvent(AuditEventType.OTP_VERIFIED_FAILED, userId, {
       attemptNumber: newAttempts,
       cumulativeFailures,
@@ -349,6 +491,7 @@ export async function verifyOTP(userId: string, otp: string) {
       loginAttempts: 0,
       otpFailedAttempts: 0,
       otpAttemptsWindowStart: null,
+      isPhoneVerified: true,
     })
     .where(eq(users.id, userId));
 
@@ -357,18 +500,10 @@ export async function verifyOTP(userId: string, otp: string) {
   return { success: true, message: "Email verified successfully!" };
 }
 
-export async function cleanupExpiredOTPs() {
+export async function cleanupExpiredOTPs(): Promise<number> {
   const result = await db
     .delete(emailVerifications)
-    .where(
-      or(
-        lt(emailVerifications.expiresAt, new Date()),
-        lt(
-          emailVerifications.createdAt,
-          new Date(Date.now() - 24 * 60 * 60 * 1000),
-        ),
-      ),
-    )
+    .where(lt(emailVerifications.expiresAt, new Date()))
     .returning();
   return result.length;
 }

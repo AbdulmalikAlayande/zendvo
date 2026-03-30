@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { paginatedResponse } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { users, gifts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import {
-  validateAmount,
-  validateCurrency,
   sanitizeInput,
+  validateMessage,
+  validateUnlockAt,
+  convertToUTCDate,
+  formatAsUTCISO,
 } from "@/lib/validation";
 import { generateOTP, storeGiftOTP } from "@/server/services/otpService";
 import { sendGiftConfirmationOTP } from "@/server/services/emailService";
+import { calculateFee } from "@/lib/fees";
 
 export async function GET() {
-  return NextResponse.json({ gifts: [] });
+  return paginatedResponse([], 0, 1, 10);
 }
 
 export async function POST(request: NextRequest) {
@@ -27,37 +31,22 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { recipient, amount, currency, message, template } = body;
-
-    // Validate required fields
-    if (!recipient || !amount || !currency) {
+    
+    // Validate request body using Zod schema
+    const validationResult = CreateGiftSchema.safeParse(body);
+    
+    if (!validationResult.success) {
+      const firstError = validationResult.error.issues[0];
       return NextResponse.json(
         {
           success: false,
-          error: "Recipient, amount, and currency are required",
+          error: firstError.message,
         },
         { status: 400 },
       );
     }
 
-    // Validate amount
-    if (typeof amount !== "number" || !validateAmount(amount)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Amount must be a positive number within allowed limits",
-        },
-        { status: 422 },
-      );
-    }
-
-    // Validate currency
-    if (typeof currency !== "string" || !validateCurrency(currency)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid currency" },
-        { status: 422 },
-      );
-    }
+    const { recipient, amount, currency, message, template, coverImageId, unlock_at } = validationResult.data;
 
     // Check if recipient exists
     const recipientUser = await db.query.users.findFirst({
@@ -82,6 +71,32 @@ export async function POST(request: NextRequest) {
     // Sanitize optional fields
     const sanitizedMessage = message ? sanitizeInput(message) : null;
     const sanitizedTemplate = template ? sanitizeInput(template) : null;
+    const sanitizedCoverImageId = coverImageId ? sanitizeInput(String(coverImageId)) : null;
+
+    // Validate message length
+    if (!validateMessage(sanitizedMessage)) {
+      return NextResponse.json(
+        { success: false, error: "Message cannot exceed 500 characters" },
+        { status: 400 },
+      );
+    }
+
+    // Validate unlock_at if provided
+    if (unlock_at) {
+      const unlockValidation = validateUnlockAt(unlock_at);
+      if (!unlockValidation.valid) {
+        return NextResponse.json(
+          { success: false, error: unlockValidation.error },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Generate short link slug
+    const slug = await generateUniqueSlug();
+
+    // Generate short code for public share links
+    const shortCode = await generateUniqueShortCode();
 
     // Create gift record
     const [newGift] = await db
@@ -90,10 +105,14 @@ export async function POST(request: NextRequest) {
         senderId: userId,
         recipientId: recipient,
         amount,
-        currency: currency.toUpperCase(),
+        currency,
         message: sanitizedMessage,
         template: sanitizedTemplate,
+        coverImageId: sanitizedCoverImageId,
+        unlockDatetime: utcUnlockDatetime,
         status: "pending_otp",
+        slug,
+        shortCode,
       })
       .returning();
 
@@ -120,6 +139,8 @@ export async function POST(request: NextRequest) {
         success: true,
         giftId: newGift.id,
         status: "pending_otp",
+        slug: newGift.slug,
+        shortCode: newGift.shortCode,
       },
       { status: 201 },
     );

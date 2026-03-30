@@ -13,6 +13,21 @@ export async function GET(
 
     const gift = await db.query.gifts.findFirst({
       where: eq(gifts.id, giftId),
+      columns: {
+        id: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        amount: true,
+        currency: true,
+        message: true,
+        senderName: true,
+        hideAmount: true,
+        hideSender: true,
+        unlockDatetime: true,
+        linkExpiresAt: true,
+        isAnonymous: true,
+      },
       with: {
         recipient: { columns: { id: true, name: true, email: true } },
         sender: { columns: { name: true } },
@@ -23,6 +38,13 @@ export async function GET(
       return NextResponse.json(
         { success: false, error: "Gift not found" },
         { status: 404 },
+      );
+    }
+
+    if (gift.linkExpiresAt && new Date(gift.linkExpiresAt) < new Date()) {
+      return NextResponse.json(
+        { success: false, error: "This gift link has expired" },
+        { status: 410 },
       );
     }
 
@@ -53,7 +75,7 @@ export async function GET(
             hideAmount: gift.hideAmount,
             hideSender: gift.hideSender,
           },
-          unlockDatetime: gift.unlockDatetime,
+          unlockDatetime: gift.unlockDatetime ? gift.unlockDatetime.toISOString() : null,
           message: gift.message,
           senderName: gift.sender?.name ?? gift.senderName ?? null,
         },

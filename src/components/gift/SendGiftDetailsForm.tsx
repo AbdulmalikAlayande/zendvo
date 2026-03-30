@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
+import { Eye } from "lucide-react";
 import { PhoneInput } from "@/components/PhoneInput";
 import Button from "@/components/Button";
+import GiftPreviewModal from "@/components/gift/GiftPreviewModal";
 
-// Import your placeholder image
 import UserProfile from "@/assets/images/user.png";
 
 const PRESET_AMOUNTS = [5, 10, 50, 100, 200, 500];
@@ -44,6 +45,29 @@ export type SendGiftDetailsFormProps = {
   value?: GiftDetailsFormValues;
   onChange?: (val: GiftDetailsFormValues) => void;
   onContinue?: () => void;
+  showOptionsOnly?: boolean;
+  onBack?: () => void;
+};
+
+// Utility functions for Naira formatting
+const formatNaira = (value: number): string => {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const parseNairaInput = (input: string): number | null => {
+  const cleaned = input.replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  let numeric = parts[0];
+  if (parts.length > 1) {
+    numeric += "." + parts.slice(1).join("");
+  }
+  const parsed = parseFloat(numeric);
+  return Number.isNaN(parsed) ? null : parsed;
 };
 
 export default function SendGiftDetailsForm({
@@ -52,40 +76,92 @@ export default function SendGiftDetailsForm({
   value,
   onChange,
   onContinue,
+  showOptionsOnly = false,
+  onBack,
 }: SendGiftDetailsFormProps) {
-  // Recipient State
   const [countryCode, setCountryCode] = useState("+234");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [phoneNumber, setPhoneNumber] = useState(value?.recipientPhone || "");
   const [recipient, setRecipient] = useState<{
     name: string;
     username: string;
-    avatar: any;
+    avatar: string;
   } | null>(null);
 
-  // Amount State
-  const [amount, setAmount] = useState<string>("");
+  // Amount State (Naira formatting)
+  const [rawAmount, setRawAmount] = useState<string>(value?.amount || "");
+  const [formattedAmount, setFormattedAmount] = useState<string>("");
 
   // Delivery Date & Time State
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  const [date, setDate] = useState(value?.unlockDate || "");
+  const [time, setTime] = useState(value?.unlockTime || "");
   const [dateTimeError, setDateTimeError] = useState("");
 
   // Options State
-  const [hideAmount, setHideAmount] = useState(false);
-  const [message, setMessage] = useState("");
+  const [hideAmount, setHideAmount] = useState(value?.hideAmountUntilUnlock || false);
+  const [message, setMessage] = useState(value?.message || "");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Sync with parent component values
+  useEffect(() => {
+    if (value) {
+      setPhoneNumber(value.recipientPhone || "");
+      setRawAmount(value.amount || "");
+      setDate(value.unlockDate || "");
+      setTime(value.unlockTime || "");
+      setHideAmount(value.hideAmountUntilUnlock || false);
+      setMessage(value.message || "");
+    }
+  }, [value]);
+
+  // Format raw amount for display
+  useEffect(() => {
+    if (rawAmount) {
+      const num = parseFloat(rawAmount);
+      setFormattedAmount(Number.isNaN(num) ? "" : formatNaira(num));
+    } else {
+      setFormattedAmount("");
+    }
+  }, [rawAmount]);
+
+  // Notify parent of any change
+  useEffect(() => {
+    if (onChange) {
+      onChange({
+        recipientId: value?.recipientId || "",
+        recipientName: value?.recipientName || recipient?.name || "",
+        recipientEmail: value?.recipientEmail || "",
+        recipientPhone: phoneNumber,
+        amount: rawAmount,
+        currency: "NGN",
+        message,
+        templateId: value?.templateId || "",
+        hideAmountUntilUnlock: hideAmount,
+        anonymousUntilUnlock: value?.anonymousUntilUnlock || false,
+        unlockDate: date,
+        unlockTime: time,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    date,
+    hideAmount,
+    message,
+    phoneNumber,
+    rawAmount,
+    recipient?.name,
+    time,
+  ]);
 
   // 1. Mock Recipient Lookup Logic
   useEffect(() => {
     const cleanedPhone = phoneNumber.replace(/\D/g, "");
-    // Simulate lookup completion after entering a valid length number
     if (cleanedPhone.length >= 10) {
       setRecipient({
         name: "Julaybeeb Abubakar",
         username: "@julaybeeb",
-        avatar: UserProfile,
+        avatar: UserProfile.src,
       });
     } else {
       setRecipient(null);
@@ -97,23 +173,33 @@ export default function SendGiftDetailsForm({
     if (date && time) {
       const selectedDateTime = new Date(`${date}T${time}`);
       const now = new Date();
-      if (selectedDateTime <= now) {
-        setDateTimeError("Delivery time must be in the future");
-      } else {
-        setDateTimeError("");
-      }
+      setDateTimeError(
+        selectedDateTime <= now ? "Delivery time must be in the future" : ""
+      );
     } else {
       setDateTimeError("");
     }
   }, [date, time]);
 
   // 3. Validation for the Continue Button
-  const isFormValid =
-    recipient !== null && amount !== "" && Number(amount) > 0 && !dateTimeError;
+  const isFormValid = showOptionsOnly
+    ? !dateTimeError
+    : recipient !== null &&
+    rawAmount !== "" &&
+    parseFloat(rawAmount) > 0 &&
+    !dateTimeError;
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const parsed = parseNairaInput(e.target.value);
+    setRawAmount(parsed !== null ? parsed.toString() : "");
+  };
+
+  const handlePresetClick = (amount: number) => {
+    setRawAmount(amount.toString());
+  };
 
   const handleContinue = () => {
     setIsLoading(true);
-    // Simulate API/Routing delay
     setTimeout(() => {
       setIsLoading(false);
       onContinue?.();
@@ -124,85 +210,84 @@ export default function SendGiftDetailsForm({
     <div className="w-full flex justify-center px-4 py-6 md:py-10">
       <div className="w-full max-w-[400px] rounded-3xl bg-[#FAFAFB] border border-[#EEEEF3] p-5 md:p-6 shadow-sm">
         <h2 className="text-[24px] md:text-[28px] font-semibold text-[#18181B]">
-          Send a Gift
+          {showOptionsOnly ? "Gift Options" : "Send a Gift"}
         </h2>
         <p className="text-[13px] text-[#717182] mt-1.5 mb-6">
-          Enter recipient details and amount to send a gift.
+          {showOptionsOnly
+            ? "Configure delivery and wrapper options for your gift."
+            : "Enter recipient details and amount to send a gift."}
         </p>
 
         <div className="space-y-5">
-          {/* Recipient Phone Input */}
-          <div>
-            <PhoneInput
-              label="Recipient Phone Number"
-              placeholder="e.g. 812 345 6789"
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-            />
-
-            {/* Contact Card (Renders when recipient is found) */}
-            {recipient && (
-              <div className="mt-3 flex items-center gap-3 p-3 bg-white border border-[#E5E7EB] rounded-xl shadow-sm transition-all animate-in fade-in slide-in-from-top-2">
-                <Image
-                  src={recipient.avatar}
-                  alt="Recipient avatar"
-                  width={40}
-                  height={40}
-                  className="rounded-full object-cover border border-[#EEEEF3]"
-                />
-                <div className="flex flex-col">
-                  <span className="text-[14px] font-semibold text-[#18181B] leading-none">
-                    {recipient.name}
-                  </span>
-                  <span className="text-[12px] text-[#717182] mt-1">
-                    {recipient.username}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Amount Selection */}
-          <div>
-            <label className="block text-xs text-[#9CA3AF] mb-2 px-1">
-              Gift Amount (USD)
-            </label>
-
-            {/* Custom Amount Input */}
-            <div className="relative flex items-center mb-3">
-              <span className="absolute left-4 text-[#18181B] font-medium text-lg">
-                $
-              </span>
-              <input
-                type="number"
-                min="1"
-                placeholder="Enter custom amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-8 pr-4 py-3 rounded-lg bg-white border border-[#E5E7EB] text-[#030213] placeholder:text-[#C6C7CF] focus:outline-none focus:ring-2 focus:ring-[#5A42DE]/20 focus:border-[#5A42DE] transition-all"
+          {/* Recipient Phone Input - Only show in details step */}
+          {!showOptionsOnly && (
+            <div>
+              <PhoneInput
+                label="Recipient Phone Number"
+                placeholder="e.g. 812 345 6789"
+                countryCode={countryCode}
+                onCountryCodeChange={setCountryCode}
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
               />
-            </div>
 
-            {/* Preset Amount Grid */}
-            <div className="grid grid-cols-3 gap-2">
-              {PRESET_AMOUNTS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setAmount(String(preset))}
-                  className={`py-2 rounded-lg text-sm font-medium transition-colors border ${
-                    amount === String(preset)
-                      ? "bg-[#F1EDFF] border-[#5A42DE] text-[#5A42DE]"
-                      : "bg-white border-[#E5E7EB] text-[#717182] hover:bg-gray-50"
-                  }`}
-                >
-                  ${preset}
-                </button>
-              ))}
+              {/* Contact Card (Renders when recipient is found) */}
+              {recipient && (
+                <div className="mt-3 flex items-center gap-3 p-3 bg-white border border-[#E5E7EB] rounded-xl shadow-sm transition-all animate-in fade-in slide-in-from-top-2">
+                  <Image
+                    src={recipient.avatar}
+                    alt="Recipient avatar"
+                    width={40}
+                    height={40}
+                    className="rounded-full object-cover border border-[#EEEEF3]"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-[14px] font-semibold text-[#18181B] leading-none">
+                      {recipient.name}
+                    </span>
+                    <span className="text-[12px] text-[#717182] mt-1">
+                      {recipient.username}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* Amount Selection - Only show in details step */}
+          {!showOptionsOnly && (
+            <div>
+              <label className="block text-xs text-[#9CA3AF] mb-2 px-1">
+                Gift Amount (NGN)
+              </label>
+
+              {/* Custom Amount Input with Naira formatting */}
+              <input
+                type="text"
+                placeholder="₦ 0.00"
+                value={formattedAmount}
+                onChange={handleAmountChange}
+                className="w-full px-4 py-3 rounded-lg bg-white border border-[#E5E7EB] text-[#030213] placeholder:text-[#C6C7CF] focus:outline-none focus:ring-2 focus:ring-[#5A42DE]/20 focus:border-[#5A42DE] transition-all mb-3"
+              />
+
+              {/* Preset Amount Grid */}
+              <div className="grid grid-cols-3 gap-2">
+                {PRESET_AMOUNTS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handlePresetClick(preset)}
+                    className={`py-2 rounded-lg text-sm font-medium transition-colors border ${rawAmount === String(preset)
+                        ? "bg-[#F1EDFF] border-[#5A42DE] text-[#5A42DE]"
+                        : "bg-white border-[#E5E7EB] text-[#717182] hover:bg-gray-50"
+                      }`}
+                  >
+                    ₦{preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Delivery Date & Time */}
           <div>
@@ -267,6 +352,16 @@ export default function SendGiftDetailsForm({
             />
           </div>
 
+          {/* Preview Link */}
+          <button
+            type="button"
+            onClick={() => setIsPreviewOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 text-[13px] text-[#5A42DE] font-medium hover:text-[#4E37CC] transition-colors py-1"
+          >
+            <Eye size={15} strokeWidth={2} />
+            Preview recipient&apos;s view
+          </button>
+
           {/* Submit Button */}
           <Button
             onClick={handleContinue}
@@ -276,6 +371,21 @@ export default function SendGiftDetailsForm({
           >
             Continue
           </Button>
+
+          {/* Gift Preview Modal */}
+          <GiftPreviewModal
+            isOpen={isPreviewOpen}
+            onClose={() => setIsPreviewOpen(false)}
+            data={{
+              recipientName: recipient?.name ?? "",
+              amount: rawAmount,
+              currency: "NGN",
+              message,
+              hideAmount,
+              unlockDate: date,
+              unlockTime: time,
+            }}
+          />
         </div>
       </div>
     </div>

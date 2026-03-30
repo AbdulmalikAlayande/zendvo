@@ -1,4 +1,5 @@
 import * as jose from "jose";
+export type UserRole = "Sender" | "Recipient" | "Admin";
 
 const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET || "fallback_access_secret";
 const REFRESH_TOKEN_SECRET =
@@ -15,7 +16,8 @@ const encodedRefreshTokenSecret = new TextEncoder().encode(
 export interface TokenPayload {
   userId: string;
   email: string;
-  role: string;
+  role: UserRole;
+  fingerprint?: string;
 }
 
 export async function generateAccessToken(
@@ -33,6 +35,7 @@ export async function generateRefreshToken(
 ): Promise<string> {
   return await new jose.SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(REFRESH_TOKEN_EXPIRY)
     .sign(encodedRefreshTokenSecret);
@@ -58,9 +61,10 @@ export async function verifyAccessTokenDetailed(
     const { payload } = await jose.jwtVerify(token, encodedAccessTokenSecret);
     return { valid: true, payload: payload as unknown as TokenPayload };
   } catch (error) {
+    const typedError = error as { code?: string };
     return {
       valid: false,
-      expired: (error as any).code === "ERR_JWT_EXPIRED",
+      expired: typedError.code === "ERR_JWT_EXPIRED",
     };
   }
 }
