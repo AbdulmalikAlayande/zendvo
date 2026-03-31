@@ -28,13 +28,13 @@ function mockChain(result: Record<string, unknown>[]) {
 describe("Dashboard Summary API", () => {
   afterEach(() => jest.clearAllMocks());
 
-  test("returns 401 when unauthenticated", async () => {
-    const res = await GET(makeRequest(null));
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.error).toBe("Unauthorized");
-  });
+test("returns 401 when unauthenticated", async () => {
+  const res = await GET(makeRequest(null));
+  expect(res.status).toBe(401);
+  const body = await res.json();
+  expect(body.detail).toBeDefined();
+  expect(body.detail).toBe("Unauthorized");
+});
 
   test("returns 200 with summary data for authenticated user", async () => {
     (mockDb.select as jest.Mock)
@@ -80,10 +80,9 @@ describe("Dashboard Summary API", () => {
       }),
     });
 
-    const res = await GET(makeRequest());
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.error).toBe("Internal server error");
-  });
+  const res = await GET(makeRequest());
+  expect(res.status).toBe(500);
+  const body = await res.json();
+  expect(body.detail).toBeDefined();
+  expect(body.detail).toBe("Internal server error");
 });
